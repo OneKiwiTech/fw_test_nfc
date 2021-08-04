@@ -6,6 +6,9 @@
 #include "fsl_spi.h"
 #include "fsl_gpio.h"
 
+#define  SPI_RX_BUF_SIZE     64U
+static   uint8_t  g_SpiRxBuf[SPI_RX_BUF_SIZE] = { 0 };
+
 void spi_pins_init(void)
 {
     const uint32_t port0_pin0_config = (
@@ -35,24 +38,15 @@ void spi_pins_init(void)
         IOCON_PIO_OPENDRAIN_DI          /* Open drain is disabled */
     );
 
-    const uint32_t port0_pin4_config = (
-        IOCON_PIO_FUNC1 |               /* Pin is configured as FC3_RTS_SCL_SSEL1 */
-        IOCON_PIO_MODE_PULLUP |         /* Selects pull-up function */
-        IOCON_PIO_SLEW_STANDARD |       /* Standard mode, output slew rate control is enabled */
-        IOCON_PIO_INV_DI |              /* Input function is not inverted */
-        IOCON_PIO_DIGITAL_EN |          /* Enables digital function */
-        IOCON_PIO_OPENDRAIN_DI          /* Open drain is disabled */
-    );
-
     IOCON_PinMuxSet(IOCON, 0U, 0U, port0_pin0_config);
     IOCON_PinMuxSet(IOCON, 0U, 2U, port0_pin2_config);
     IOCON_PinMuxSet(IOCON, 0U, 3U, port0_pin3_config);
-    IOCON_PinMuxSet(IOCON, 0U, 4U, port0_pin4_config);
 
     /* Define the init structure for the output LED pin*/
     gpio_pin_config_t spi_cs_config = {
         kGPIO_DigitalOutput, 0,
     };
+
     /* Init output LED GPIO. */
     GPIO_PinInit(GPIO, SPI_CS_PORT, SPI_CS_PIN, &spi_cs_config);
     GPIO_PinWrite(GPIO, SPI_CS_PORT, SPI_CS_PIN, 1);
@@ -79,14 +73,11 @@ void spi_init(void)
 	 * userConfig.baudRate_Bps = 500000U;
 	 */
     SPI_MasterGetDefaultConfig(&spi_config);
-    spi_config.sselNum = (spi_ssel_t)0;
+    spi_config.polarity = kSPI_ClockPolarityActiveLow;
+    spi_config.phase = kSPI_ClockPhaseSecondEdge;
+    spi_config.direction = kSPI_MsbFirst;
+    spi_config.baudRate_Bps = 4000000U;
     SPI_MasterInit(DRV_SPI, &spi_config, DRV_SPI_CLK_FREQ);
-
-    /* Create handle for SPI master */
-    //SPI_MasterTransferCreateHandle(DRV_SPI, &spi_handle, spi_callback, NULL);
-
-    /* Set priority, slave have higher priority */
-    //NVIC_SetPriority(DRV_SPI_IRQ, 1U);
 }
 
 status_t spi_transfer(uint8_t *tx_data, uint8_t *rx_data, uint8_t size)
@@ -116,6 +107,9 @@ status_t ams_write_register(uint8_t address, uint8_t data)
 
 status_t ams_read_register(uint8_t address, uint8_t *rx_data)
 {
+	status_t xRet = 0;
+	uint16_t len = 0;
+
 	/*
 	send_recv(0x20| (addr & 0x1f));
 	uint8_t data = send_recv(0);
@@ -124,7 +118,14 @@ status_t ams_read_register(uint8_t address, uint8_t *rx_data)
 	return data;
 	*/
 	uint8_t tx_data[2] = {0x20 | (address & 0x1f), 0x00};
-	return spi_transfer(tx_data, rx_data, sizeof(tx_data));
+	len = sizeof(tx_data);
+	xRet = spi_transfer(tx_data, &g_SpiRxBuf[0], len);
+
+	UNSELECT();
+	SELECT();
+	*rx_data = g_SpiRxBuf[len - 1];
+
+	return xRet;
 }
 
 void ams_read_info_register(AMS_DEVICE * dev)
@@ -134,7 +135,7 @@ void ams_read_info_register(AMS_DEVICE * dev)
 
 	for (i = 0x00; i < 0x0d; i++)
 	{
-		ams_read_register(i, data_regs+i);
+		ams_read_register(i, &data_regs[i]);
 	}
 
 	dev->regs.io_conf = data_regs[0x00];
@@ -178,8 +179,10 @@ void ams_print_device(AMS_DEVICE * dev)
     printf("    version_min:    %02x\r\n",dev->regs.version_min);
 }
 
-status_t ams_read_buffer(uint8_t *data, int size)
+status_t ams_read_buffer(uint8_t *data, int rx_size)
 {
+	status_t xRet = 0;
+
 	/*
 	send_recv(0xa0);
 	while(len--)
@@ -193,7 +196,11 @@ status_t ams_read_buffer(uint8_t *data, int size)
 
 	uint8_t tx_data = 0xa0;
 	spi_transfer(&tx_data, NULL, 1);
-	return spi_transfer(NULL, data, size);
+
+	xRet = spi_transfer(NULL, g_SpiRxBuf, rx_size);
+	memcpy(data, g_SpiRxBuf, rx_size);
+
+	return xRet;
 }
 
 status_t ams_write_buffer(uint8_t *data, int size)
@@ -213,8 +220,9 @@ status_t ams_write_buffer(uint8_t *data, int size)
 	return spi_transfer(data, NULL, size);
 }
 
-status_t ams_read_eeprom(uint8_t address, uint8_t *rx_data)
+status_t ams_read_eeprom(uint8_t address, uint8_t *rx_data, uint16_t rx_size)
 {
+	status_t ret = 0;
 	/*
 	send_recv(0x7f);
 	send_recv(block << 1);
@@ -230,7 +238,13 @@ status_t ams_read_eeprom(uint8_t address, uint8_t *rx_data)
 	uint8_t tx_data[2] = {0x7f, address << 1};
 	spi_transfer(tx_data, NULL, sizeof(tx_data));
 
-	return spi_transfer(NULL, rx_data, sizeof(rx_data));
+	ret = spi_transfer(NULL, &g_SpiRxBuf[0], rx_size);
+	UNSELECT();
+	SELECT();
+
+	memcpy(rx_data, g_SpiRxBuf, rx_size);
+
+	return ret;
 }
 
 status_t ams_write_eeprom(uint8_t address, uint8_t *data)
@@ -279,4 +293,13 @@ int ams_init(void)
     return 0;
 }
 
+void ams_test_spi(void)
+{
+	uint8_t productType = 0;
+	ams_read_register(AMS_REG_PRODUCT_TYPE, &productType);
+	if (productType == 0x14)
+	{
+		asm("NOP");
+	}
+}
 /************************ (C) COPYRIGHT Kien Minh Co.,Ltd *****END OF FILE****/

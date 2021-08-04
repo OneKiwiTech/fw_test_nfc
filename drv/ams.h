@@ -9,6 +9,10 @@
 #define SPI_CS_SET()        GPIO_PinWrite(GPIO, SPI_CS_PORT, SPI_CS_PIN, 1)
 #define SPI_CS_CLR()        GPIO_PinWrite(GPIO, SPI_CS_PORT, SPI_CS_PIN, 0)
 
+
+#define 	UNSELECT()	    SPI_CS_SET()
+#define 	SELECT()        SPI_CS_CLR()
+
 #define DRV_SPI             SPI3
 #define DRV_SPI_IRQ         FLEXCOMM3_IRQn
 #define DRV_SPI_CLK_FREQ    CLOCK_GetFlexCommClkFreq(3U)
@@ -144,7 +148,7 @@ status_t ams_write_register(uint8_t address, uint8_t data);
 status_t ams_read_register(uint8_t address, uint8_t *rx_data);
 status_t ams_read_buffer(uint8_t *data, int size);
 status_t ams_write_buffer(uint8_t *data, int size);
-status_t ams_read_eeprom(uint8_t address, uint8_t *rx_data);
+status_t ams_read_eeprom(uint8_t address, uint8_t *rx_data, uint16_t rx_size);
 status_t ams_write_eeprom(uint8_t address, uint8_t *data);
 status_t ams_write_command(uint8_t cmd);
 
@@ -152,6 +156,7 @@ int ams_init(void);
 void ams_read_info_register(AMS_DEVICE * dev);
 void ams_print_device(AMS_DEVICE * dev);
 
+void ams_test_spi(void);
 #endif /* __AMS_H */
 
  // https://github.com/osrf/ovc/blob/master/ovc4/firmware/lpc_fw/source/imu_spi.c
