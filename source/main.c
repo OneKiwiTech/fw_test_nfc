@@ -7,8 +7,6 @@
 #include "fsl_debug_console.h"
 #include "as3953.h"
 
-static ams_device_t dev;
-
 int main(void) {
 
     /* Init board hardware. */
@@ -22,9 +20,9 @@ int main(void) {
 
     PRINTF("Hello World\n");
 
-    as3953_init();
-    as3953_get_info_register(&dev);
-    as3953_show_info_register(&dev);
+    //as3953_init();
+    //as3953_get_info_register(&dev);
+    //as3953_show_info_register(&dev);
 
     return 0 ;
 }
